@@ -55,8 +55,8 @@ for m in eta:
     z3 = (1j/m)*(2*delta*a+t)*w*rho+z2+rm               # impedance of resonant absorber
     R = (z3-rho*c)/(z3+rho*c)                           # reflection factor
     alpha = 1-abs(R)**2                                 # absorption coefficient
-    # plt.plot(f, np.real(z3))
-    plt.plot(f, alpha)
+    plt.plot(f, np.real(z3))
+    # plt.plot(f, alpha)
 
 
 

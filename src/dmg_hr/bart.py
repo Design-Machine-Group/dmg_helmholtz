@@ -78,7 +78,7 @@ if __name__ == '__main__':
         linner, louter = neck_len_correction(sn, nr, br)
         nl += louter + linner
         # nl = nl_
-        print(nl, nl_)
+        # print(nl, nl_)
 
 
 
