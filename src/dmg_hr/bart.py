@@ -42,6 +42,10 @@ def neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq):
     rn = nwall + nends
     return rn
 
+def neck_resistance_paper(nl, nr, mu, rho, afreq):
+    rn = (2 * (nl / nr)) * (sqrt(2 * mu * rho * afreq) / (np.pi * nr ** 2))
+    return rn
+
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
@@ -89,6 +93,7 @@ if __name__ == '__main__':
 
         rn = neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq)  # neck resitance (kg/s)
         #TODO neck resistance values still differ slightly from Barts chart
+        # rn = neck_resistance_paper(nl, nr, mu, rho, afreq)
         rnlist.append(rn)
 
         s = spring_stiffness(rho, c, sn, vol)           # spring stiffness
