@@ -18,7 +18,7 @@ def eval_freq():
     rc = float(entries[3][1].get()) * 0.01
     lc = float(entries[4][1].get()) * 0.01
 
-    if len([x for x in [ln,rn1,rc,lc] if x > 0]) == 4:
+    if ln > 0 and rn1 > 0 and rc > 0 and lc > 0:
         # Length end corrections
         ln = ln + 1.7*rn1
 
@@ -46,7 +46,7 @@ def eval_freq():
 
 def makeform(root):
     global entries, fields
-    i = 1
+
     for field in fields:
         row = tk.Frame(root)
         lab = tk.Label(row, width=25, text=field)
@@ -59,7 +59,7 @@ def makeform(root):
         lab.pack(side=tk.LEFT)
         ent.pack(side=tk.RIGHT, expand=tk.YES, fill=tk.X)
         entries.append((lab, ent))
-        i+=1
+
     return entries
 
 def show_fields_circular():
