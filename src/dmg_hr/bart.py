@@ -77,18 +77,13 @@ def neck_resistance_paper(nl, nr, mu, rho, afreq):
 
 
 if __name__ == '__main__':
-    from scipy.spatial.distance import pdist
-    from scipy.spatial.distance import squareform
-    
-    nx = 3
-    ny = 3
-    points = [[i, j, 0] for j in range(ny) for i in range(nx)]
-    points = np.array(points)
-    d = pdist(points, 'euclidean')
-    d_ = squareform(d)
+    from spatial import make_othro_array
+    from spatial import point_array_distance
 
+    points = make_othro_array(10,10, .1, .1)
+    d = point_array_distance(points)
     
-
+    
 
 
 

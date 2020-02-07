@@ -5,10 +5,10 @@ from scipy.spatial.distance import squareform
 
 
 
-def make_othro_array(nx, xy, dx, dy, sp=[0, 0, 0]):
+def make_othro_array(nx, ny, dx, dy, sp=[0, 0, 0]):
     """This function makes an nx by ny orthogonal array of points,
-        spaced dx and dy, ans starting from sp. The z coordinate
-        will be assumed to be zero. 
+        spaced dx and dy, and starting from sp. The z coordinate
+        will be assumed to be the same as the starting point sp. 
 
         Parameters
         nx(int): The number of points in the x direction
@@ -21,7 +21,7 @@ def make_othro_array(nx, xy, dx, dy, sp=[0, 0, 0]):
         points(ndarray): The point array
     """
 
-    points = [[i, j, 0] for j in range(ny) for i in range(nx)]
+    points = [[i * dx + sp[0], j * dy + sp[1], sp[2]] for j in range(ny) for i in range(nx)]
     return np.array(points)
 
 def point_array_distance(points):
