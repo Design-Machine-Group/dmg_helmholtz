@@ -3,7 +3,7 @@ import scipy as sp
 from math import sqrt
 
 
-'''Helmholtz resonator array calculation based on Bart Van Der Aaa's thesis'''
+'''Helmholtz resonator array calculation based on Bart Van Der Aaa's thesis (2010)'''
 
 def greens(r, k):
     """This is a greens function as described by [Bart2019]
@@ -16,6 +16,20 @@ def greens(r, k):
     (float) The greens function something.
     """
     return np.exp(-1j * k * r) / r
+
+def coupling_function(afreq, rho, rmn, s):
+    """ This is the couppling function between two HRs (m and n) at a distance of rmn.
+    Var der Aa (2010) eqs 2.24 in page 18
+
+    Parameters:
+    afreq(float): Angular frequency = 2 pi f (rad / s)
+    rho(float): Air density (kg/m3)
+    rms(float): The distance between the center of tne neck openings for HRs m and n
+    s(float): The neck opening surface for resonator m
+    """
+
+    gmn = ((1j * afreq * rho) / (2 * np.pi)) * greens(rmn) * s
+    return gmn
 
 def hr_impedance(afreq, m, rn, s, sn):
     zhr = ((1j * afreq * m) + rn - ((1j / afreq) * s)) / sn
@@ -35,6 +49,21 @@ def spring_stiffness(rho, c, sn, vol):
     return s
 
 def neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq):
+    """
+    This function computes the neck resistance in an HR using the forulation
+    presented in Var der Aa (2010) eqs 2.6 and 2.7 in page 10. 
+
+    Parameters:
+
+    mu(float): Dynamical viscosity of air (Ns / m2)
+    gamma(float): Ratio of specific heats (-)
+    thcon(flat): Thermal conductivity (W / mK)
+    cp(float): Heat capacity at constant pressure (J / kgK)
+    nl(float): Neck length (m)
+    nr(float): Neck radius (m)
+    rho(float): Air density (kg/m3)
+    afreq(float): Angular frequency = 2 pi f (rad / s)
+    """
     #TODO neck resistance values still differ slightly from Barts chart
     mueff = mu * ((1 + ((gamma - 1) * sqrt(thcon / (mu * cp)))) ** 2)
     nwall = (nl / nr) * (sqrt(2 * mueff * rho * afreq) / (np.pi * nr ** 2))
@@ -48,80 +77,121 @@ def neck_resistance_paper(nl, nr, mu, rho, afreq):
 
 
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
+    from scipy.spatial.distance import pdist
+    from scipy.spatial.distance import squareform
+    
+    nx = 3
+    ny = 3
+    points = [[i, j, 0] for j in range(ny) for i in range(nx)]
+    points = np.array(points)
+    d = pdist(points, 'euclidean')
+    d_ = squareform(d)
 
-    flist = range(1, 2020, 20)
-    # flist = [200]
-    rnlist = []
-    zhrlist = []
-    for f in flist:
-
-        # acoustic parameters - - -
-        #f       = 250.             # frequency (Hz)
-        c       = 344.3             # speed of sound (m/s)
-        rho     = 1.205             # density of air (kg/m3c)
-        mu      = 1.88e-5           # dynamic viscosity of air (Ns / m2)
-        gamma   = 1.4               # ratio of specific heats (-)
-        thcon   = .026              # thermal conductivity (W / mk)
-        cp      = 1010.              # heat capacity at constant pressure (J / kgK)
-
-        wlen = c / f                # wavelength (m)
-        afreq = 2 * np.pi * f       # angular frequency (rad/s)
-        k = (2. * np.pi) / wlen     #wavenumber (rad/m)
-
-        # hr parameters - - -
-        nl = .004        # neck length
-        nr = .002       # neck radius
-        bl = .016       # body length
-        br = .0035        # body radius
-
-        sn = np.pi * (nr ** 2) # neck opening surface (m2)
-        sb = np.pi * (br ** 2) # body opening surface (m2)
-
-        nl_= nl + (1.7 * nr)
-        linner, louter = neck_len_correction(sn, nr, br)
-        nl += louter + linner
-        # nl = nl_
-        # print(nl, nl_)
+    
 
 
 
-        mn = sn * rho * nl                              # neck mass (kg/m3)
-        mb = body_mass_correction(rho, bl, sb, sn)      # body mass (kg/m3)
-        m = mn + mb                                     # total mass (kg/m3)
-        vol = (sb * bl)# (sn * nl) + (sb * bl)                     # volume (m3)
 
-        #TODO neck resistance values still differ slightly from Barts chart
-        # rn = neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq)  # neck resitance (kg/s)
-        rn = neck_resistance_paper(nl, nr, mu, rho, afreq)
-        rnlist.append(rn / 1e5)
 
-        s = spring_stiffness(rho, c, sn, vol)           # spring stiffness
-        zhr = hr_impedance(afreq, m, rn, s, sn)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # import matplotlib.pyplot as plt
+    # flist = range(1, 2020, 20)
+    # # flist = [200]
+    # rnlist = []
+    # zhrlist = []
+
+    # for f in flist:
+    #     # acoustic parameters - - -
+    #     #f       = 250.             # frequency (Hz)
+    #     c       = 344.3             # speed of sound (m/s)
+    #     rho     = 1.205             # density of air (kg/m3c)
+    #     mu      = 1.88e-5           # dynamic viscosity of air (Ns / m2)
+    #     gamma   = 1.4               # ratio of specific heats (-)
+    #     thcon   = .026              # thermal conductivity (W / mk)
+    #     cp      = 1010.              # heat capacity at constant pressure (J / kgK)
+
+    #     wlen = c / f                # wavelength (m)
+    #     afreq = 2 * np.pi * f       # angular frequency (rad/s)
+    #     k = (2. * np.pi) / wlen     #wavenumber (rad/m)
+
+    #     # hr parameters - - -
+    #     nl = .004        # neck length
+    #     nr = .002       # neck radius
+    #     bl = .016       # body length
+    #     br = .0035        # body radius
+
+    #     sn = np.pi * (nr ** 2) # neck opening surface (m2)
+    #     sb = np.pi * (br ** 2) # body opening surface (m2)
+
+    #     nl_= nl + (1.7 * nr)
+    #     linner, louter = neck_len_correction(sn, nr, br)
+    #     nl += louter + linner
+    #     # nl = nl_
+    #     # print(nl, nl_)
+
+
+
+    #     mn = sn * rho * nl                              # neck mass (kg/m3)
+    #     mb = body_mass_correction(rho, bl, sb, sn)      # body mass (kg/m3)
+    #     m = mn + mb                                     # total mass (kg/m3)
+    #     vol = (sb * bl)# (sn * nl) + (sb * bl)                     # volume (m3)
+
+    #     #TODO neck resistance values still differ slightly from Barts chart
+    #     rn = neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq)  # neck resitance (kg/s)
+    #     # rn = neck_resistance_paper(nl, nr, mu, rho, afreq)
+    #     rnlist.append(rn / 1e5)
+
+    #     s = spring_stiffness(rho, c, sn, vol)           # spring stiffness
+    #     zhr = hr_impedance(afreq, m, rn, s, sn)
 
         
-        za = (rho * c ** 2) / (1j * afreq * vol)
-        tf = (za * sn) / zhr
-        zhrlist.append(np.real(zhr))
+    #     za = (rho * c ** 2) / (1j * afreq * vol)
+    #     tf = (za * sn) / zhr
+    #     zhrlist.append(np.real(zhr))
         
 
-    # plt.plot(flist, zhrlist)
+    # # plt.plot(flist, zhrlist)
+    # # plt.xlabel('f')
+    # # plt.ylabel('TFcalc')
+    # # plt.grid()
+    # # plt.show()
+
+
+    # plt.plot(flist, rnlist)
     # plt.xlabel('f')
-    # plt.ylabel('TFcalc')
+    # plt.ylabel('Rn')
     # plt.grid()
     # plt.show()
 
 
-    plt.plot(flist, rnlist)
-    plt.xlabel('f')
-    plt.ylabel('Rn')
-    plt.grid()
-    plt.show()
-
-
-    # Questions:
-        # when is the corected mass used?
-        # how is the volume calculated? is it corrected??
+    # # Questions:
+    #     # when is the corected mass used?
+    #     # how is the volume calculated? is it corrected??
 
 
 
