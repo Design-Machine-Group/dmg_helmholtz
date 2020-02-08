@@ -2,6 +2,7 @@ import numpy as np
 
 from scipy.spatial.distance import pdist
 from scipy.spatial.distance import squareform
+from scipy.spatial.distance import cdist
 
 
 
@@ -32,5 +33,29 @@ def point_array_distance(points):
     Parameters
     points(ndarray): The m x 1 array of points to calculate distances.
     """
-    d = pdist(points, 'euclidean')
-    return squareform(d)
+    D = pdist(points, 'euclidean')
+    D =  squareform(D)
+    np.fill_diagonal(D, 1)
+    return D
+
+def point_to_points_distance(pt, points):
+    return cdist(pt, points)
+
+def make_spatial_matix(v):
+    return np.tile(np.vstack(np.array(v)), len(v))
+
+
+if __name__ == '__main__':
+
+    pt = np.array([[0,0,0]])
+    print(pt.shape)
+    pts = make_othro_array(3, 3, 1, 1)
+    D = point_to_points_distance(pt, pts)
+    print(D)
+
+    # a = [0, 1, 2]
+    # # a = np.vstack(np.array(a))
+    # # b = np.tile(a, len(a))
+    # # print(b)
+    # b = make_spatial_matix(a)
+    # print(b)
