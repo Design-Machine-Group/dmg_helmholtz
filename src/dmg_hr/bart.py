@@ -7,6 +7,8 @@ from math import sqrt
 #TODO: make sure the S matrix is in the right orientation (See bellow)
 #TODO: this entire code need to be checked, negative pressures???
 #TODO: make a rhino check of distances and indices
+#TODO: reproduce Bart's experiments, TF???, IL???
+#TODO: check the np.solve. Probably why signs are weird???
 
 
 def hr_resonant_freq(sn, nl, nr, br, bl):
@@ -263,7 +265,7 @@ if __name__ == '__main__':
     
     pressures = []
     frequencies = []
-    for f in range(1000, 1001, 1):
+    for f in range(1, 2000, 20):
         # scene parameters - - - - - - - - - - - - - - - -
         src_xyz = np.array([[10,0,2]])
         q0 = .1
@@ -283,8 +285,8 @@ if __name__ == '__main__':
         k = (2. * np.pi) / wlen     # wavenumber (rad/m)
 
         # hr array parameters - - - - - - - - - - - - - -
-        num_hr_x = 3
-        num_hr_y = 3
+        num_hr_x = 30
+        num_hr_y = 30
         dx = .1
         dy = .1
         num_hr = num_hr_x * num_hr_y
@@ -301,7 +303,8 @@ if __name__ == '__main__':
         sb = np.pi * (br ** 2) # body opening surface (m2)
 
         hr_rf = hr_resonant_freq(sn, nl, nr, br, bl)
-        print(hr_rf)
+        # print(hr_rf)
+
         # masses, volume - - - - - - - - - - - - - - - -
         nl, mn, mb, m = calculate_corrections(sn, nr, br, nl, rho)
         vol = (sb * bl)# (sn * nl) + (sb * bl)          # volume (m3) WICH VOLUME SHOULD BE USED????
@@ -333,12 +336,12 @@ if __name__ == '__main__':
         frequencies.append(f)
 
     # plot pressures - - - - - - - - -
-    # import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt
 
-    # plt.plot(frequencies, pressures)
-    # plt.xlabel('Frequencies (Hz)')
-    # plt.ylabel('Pressures (Pa)')
-    # plt.show()
+    plt.plot(frequencies, pressures)
+    plt.xlabel('Frequencies (Hz)')
+    plt.ylabel('Pressures (Pa)')
+    plt.show()
 
 
 
