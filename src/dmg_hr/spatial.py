@@ -39,9 +39,10 @@ def point_array_distance(points):
     return D
 
 def point_to_points_distance(pt, points):
-    return cdist(pt, points)
+    return cdist(pt, points).flatten()
 
 def make_spatial_matix(v):
+    v = np.copy(v)
     return np.tile(np.vstack(np.array(v)), len(v))
 
 
