@@ -2,13 +2,17 @@ import numpy as np
 import scipy as sp
 from math import sqrt
 
+from plotting import plot_grid
+
 '''Helmholtz resonator array calculation based on Bart Van Der Aaa's thesis (2010)'''
 #TODO: neck resistance values still differ slightly from Barts chart
 #TODO: make sure the S matrix is in the right orientation (See bellow)
-#TODO: this entire code need to be checked, negative pressures???
+#TODO: this entire code needs to be checked, negative pressures???
 #TODO: make a rhino check of distances and indices
 #TODO: reproduce Bart's experiments, TF???, IL???
 #TODO: check the np.solve. Probably why signs are weird???
+
+
 
 
 def hr_resonant_freq(sn, nl, nr, br, bl):
@@ -250,10 +254,11 @@ def calculate_coupled_hr_strenghts(afreq, rho, sn, v_):
 def calculate_pressure(q0, src_rec_d, qhr, rD, k):
     """
     """
-    p = q0 * greens(src_rec_d, k) + np.sum(qhr * greens(rD, k))
-    # p = qhr * greens(rD, k)
+    # p = q0 * greens(src_rec_d, k) + np.sum(qhr * greens(rD, k))
+    p = np.sum(qhr * greens(rD, k))
     return p
 
+def run_hr_pressure():
 
 if __name__ == '__main__':
     from scipy.linalg import solve
@@ -265,83 +270,87 @@ if __name__ == '__main__':
     
     pressures = []
     frequencies = []
-    for f in range(1, 2000, 20):
-        # scene parameters - - - - - - - - - - - - - - - -
-        src_xyz = np.array([[10,0,2]])
-        q0 = .1
-        recs = np.array([[5,0,2]])  # this should be only one for now. dont know what happens if more
+    for x in range(100):
+        temp_pressures = []
+        for z in range(1, 100):
+            # scene parameters - - - - - - - - - - - - - - - -
+            src_xyz = np.array([[10,0,2]])
+            q0 = .1
+            recs = np.array([[x*.1, 0, z*.1]])  # this should be only one for now. dont know what happens if more
 
-        # acoustic parameters - - - - - - - - - - - - - -
-        # f       = 1450.             # frequency (Hz)
-        c       = 344.3             # speed of sound (m/s)
-        rho     = 1.205             # density of air (kg/m3c)
-        mu      = 1.88e-5           # dynamic viscosity of air (Ns / m2)
-        gamma   = 1.4               # ratio of specific heats (-)
-        thcon   = .026              # thermal conductivity (W / mk)
-        cp      = 1010.              # heat capacity at constant pressure (J / kgK)
+            # acoustic parameters - - - - - - - - - - - - - -
+            f       = 1000.             # frequency (Hz)
+            c       = 344.3             # speed of sound (m/s)
+            rho     = 1.205             # density of air (kg/m3c)
+            mu      = 1.88e-5           # dynamic viscosity of air (Ns / m2)
+            gamma   = 1.4               # ratio of specific heats (-)
+            thcon   = .026              # thermal conductivity (W / mk)
+            cp      = 1010.              # heat capacity at constant pressure (J / kgK)
 
-        wlen = c / f                # wavelength (m)
-        afreq = 2. * np.pi * f       # angular frequency (rad/s)
-        k = (2. * np.pi) / wlen     # wavenumber (rad/m)
+            wlen = c / f                # wavelength (m)
+            afreq = 2. * np.pi * f       # angular frequency (rad/s)
+            k = (2. * np.pi) / wlen     # wavenumber (rad/m)
 
-        # hr array parameters - - - - - - - - - - - - - -
-        num_hr_x = 30
-        num_hr_y = 30
-        dx = .1
-        dy = .1
-        num_hr = num_hr_x * num_hr_y
-        points = make_othro_array(num_hr_x, num_hr_y, dx, dy)
-        D = point_array_distance(points)
+            # hr array parameters - - - - - - - - - - - - - -
+            num_hr_x = 20
+            num_hr_y = 20
+            dx = .1
+            dy = .1
+            num_hr = num_hr_x * num_hr_y
+            points = make_othro_array(num_hr_x, num_hr_y, dx, dy)
+            D = point_array_distance(points)
 
-        # hr parameters - - - - - - - - - - - - - - - - - 
-        nl = .004 * np.ones(num_hr)       # neck length
-        nr = .002 * np.ones(num_hr)       # neck radius
-        bl = .016 * np.ones(num_hr)       # body length
-        br = .0035 * np.ones(num_hr)      # body radius
+            # hr parameters - - - - - - - - - - - - - - - - - 
+            nl = .004 * np.ones(num_hr)       # neck length
+            nr = .002 * np.ones(num_hr)       # neck radius
+            bl = .016 * np.ones(num_hr)       # body length
+            br = .0035 * np.ones(num_hr)      # body radius
 
-        sn = np.pi * (nr ** 2) # neck opening surface (m2)
-        sb = np.pi * (br ** 2) # body opening surface (m2)
+            sn = np.pi * (nr ** 2) # neck opening surface (m2)
+            sb = np.pi * (br ** 2) # body opening surface (m2)
 
-        hr_rf = hr_resonant_freq(sn, nl, nr, br, bl)
-        # print(hr_rf)
+            hr_rf = hr_resonant_freq(sn, nl, nr, br, bl)
+            # print(hr_rf)
 
-        # masses, volume - - - - - - - - - - - - - - - -
-        nl, mn, mb, m = calculate_corrections(sn, nr, br, nl, rho)
-        vol = (sb * bl)# (sn * nl) + (sb * bl)          # volume (m3) WICH VOLUME SHOULD BE USED????
+            # masses, volume - - - - - - - - - - - - - - - -
+            nl, mn, mb, m = calculate_corrections(sn, nr, br, nl, rho)
+            vol = (sb * bl)# (sn * nl) + (sb * bl)          # volume (m3) WICH VOLUME SHOULD BE USED????
 
-        # reistance, stiffness and impedance - - - - - - 
-        rn = neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq)  # neck resitance (kg/s)
-        s = spring_stiffness(rho, c, sn, vol)           # spring stiffness
-        zhr = hr_impedance(afreq, m, rn, s, sn)         # hr impedance 
+            # reistance, stiffness and impedance - - - - - - 
+            rn = neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq)  # neck resitance (kg/s)
+            s = spring_stiffness(rho, c, sn, vol)           # spring stiffness
+            zhr = hr_impedance(afreq, m, rn, s, sn)         # hr impedance 
 
-        # coupling pressures - - - - - - - - - - - - - -
-        S = make_spatial_matix(sn)  # not sure this matrix is in the right direction
-        G = coupling_functions(afreq, rho, D, S, k)
-        A = coupling_pressures(zhr, rho, c, k, nr, G)
+            # coupling pressures - - - - - - - - - - - - - -
+            S = make_spatial_matix(sn)  # not sure this matrix is in the right direction
+            G = coupling_functions(afreq, rho, D, S, k)
+            A = coupling_pressures(zhr, rho, c, k, nr, G)
 
-        # direct to HRs - - - - - - - - - - - - - - - - -
-        sD = point_to_points_distance(src_xyz, points)
-        c_ = calculate_direct_qs(q0, sD, k).transpose()
+            # direct to HRs - - - - - - - - - - - - - - - - -
+            sD = point_to_points_distance(src_xyz, points)
+            c_ = calculate_direct_qs(q0, sD, k).transpose()
 
-        # velocities - - - - - - - - - - - - - - - - - - -
-        v_ = solve(A, c_).flatten()
+            # velocities - - - - - - - - - - - - - - - - - - -
+            v_ = solve(A, c_).flatten()
 
-        # coupled pressures, pressures - - - - - - - - - -
-        qhr = calculate_coupled_hr_strenghts(afreq, rho, sn, v_)
-        rD = point_to_points_distance(recs, points)
-        src_rec_d = point_to_points_distance(src_xyz, recs)
-        p = calculate_pressure(q0, src_rec_d, qhr, rD, k)
-        
-        pressures.append(np.real(p))
-        frequencies.append(f)
+            # coupled pressures, pressures - - - - - - - - - -
+            qhr = calculate_coupled_hr_strenghts(afreq, rho, sn, v_)
+            rD = point_to_points_distance(recs, points)
+            src_rec_d = point_to_points_distance(src_xyz, recs)
+            p = calculate_pressure(q0, src_rec_d, qhr, rD, k)
+            
+            temp_pressures.append(np.real(p))
+            # pressures.append(np.real(p))
+            # frequencies.append(f)
+        pressures.append(temp_pressures)
+    
+    # # plot pressures - - - - - - - - -
+    # import matplotlib.pyplot as plt
 
-    # plot pressures - - - - - - - - -
-    import matplotlib.pyplot as plt
+    # plt.plot(frequencies, pressures)
+    # plt.xlabel('Frequencies (Hz)')
+    # plt.ylabel('Pressures (Pa)')
+    # plt.show()
 
-    plt.plot(frequencies, pressures)
-    plt.xlabel('Frequencies (Hz)')
-    plt.ylabel('Pressures (Pa)')
-    plt.show()
-
-
+    plot_grid(np.array(pressures))
 
