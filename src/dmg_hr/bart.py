@@ -1,3 +1,4 @@
+import json
 import numpy as np 
 import scipy as sp
 from math import sqrt
@@ -285,6 +286,7 @@ class HelmholtzPanel(object):
         # self.p = np.sum(p_direct) + np.sum(p_hr_panel)
         self.p = np.sum(p_hr_panel)
         # self.p = np.sum(p_direct)
+        # self.p = (np.sum(p_direct) + np.sum(p_hr_panel)) - np.sum(p_direct)
 
     def greens(self, r, k):
         """This is a greens function as described in Var der Aa (2010) eqs 2.12 in page 14.
@@ -327,31 +329,42 @@ class HelmholtzPanel(object):
         self.compute_panel_recs_distances()
         self.calculate_pressure()
 
+
+# exporting to json - - - - - - - - - - - - -
+def data_to_json(filepath, panel, pressures, recs):
+    data = {}
+    data['src'] = panel.src_xyz.tolist()[0]
+    data['hr_pts'] = panel.hr_pts.tolist()
+    data['recs'] = recs
+    data['pressures'] = pressures
+    data['nr'] = panel.nr.tolist()
+    data['nl'] = panel.nl.tolist()
+    data['br'] = panel.br.tolist()
+    data['bl'] = panel.bl.tolist()
+
+
+    with open(filepath, 'w+') as fp:
+        json.dump(data, fp)
+
 if __name__ == '__main__':
-
-    # import cProfile, pstats, io
-    # from pstats import SortKey
-
-    # pr = cProfile.Profile()
-    # pr.enable()
     
     f = 500.
-    num_hr_x = 50
-    num_hr_y = 50
+    num_hr_x = 10
+    num_hr_y = 10
     dx = .1
     dy = .1
 
     panel = HelmholtzPanel(f, num_hr_x, num_hr_y, dx, dy)
 
     # scene parameters - - - - - - - - - - - - - - - -
-    panel.src_xyz = np.array([[5, 0, 2]])
+    panel.src_xyz = np.array([[.5, .51, 2.2]])
     panel.q0 = .1
 
     # hr parameters - - - - - - - - - - - - - - - - - 
-    panel.nl = .004 * np.ones(panel.num_hr)       # neck length
-    panel.nr = .002 * np.ones(panel.num_hr)       # neck radius
-    panel.bl = .016 * np.ones(panel.num_hr)       # body length
-    panel.br = .0035 * np.ones(panel.num_hr)      # body radius
+    panel.nl = .04 * np.ones(panel.num_hr)       # neck length
+    panel.nr = .02 * np.ones(panel.num_hr)       # neck radius
+    panel.bl = .16 * np.ones(panel.num_hr)       # body length
+    panel.br = .035 * np.ones(panel.num_hr)      # body radius
 
     # start calling methods - - - - - - -
     panel.compute_panel_impedance()
@@ -361,26 +374,30 @@ if __name__ == '__main__':
     n = 100
     # k = panel.k
     pressures = []
+    r_pressures = []
+    recs = []
+    delta  = .01
+
     for z in range(n):
         tpress = []
         for x in range(n):
-            panel.recs = np.array([[x * .1, 0, .01 + z * .1]])  # this should be only one for now. dont know what happens if more
+            panel.recs = np.array([[.5, x * delta, .01 + z * delta]])
             panel.compute_rec_pressure()
             tpress.append(np.real(panel.p))
-            # d = point_to_points_distance(panel.src_xyz , panel.recs)[0]
-            # # print([x * .1, 0, z * .1])
-            # p = np.exp(-1j * k * d) / d
-            # # print(d, np.real(p))
-            # # tpress.append(d)
-            # tpress.append(np.real(p))
+            r_pressures.append(np.real(panel.p))
+            recs.append(panel.recs.tolist()[0])
         pressures.append(tpress)
 
-
-    # pr.disable()
-    # s = io.StringIO()
-    # sortby = SortKey.CUMULATIVE
-    # ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-    # ps.print_stats()
-    # print(s.getvalue())
+    for z in range(n):
+        # tpress = []
+        for x in range(n):
+            panel.recs = np.array([[x * delta, .5, .01 + z * delta]])  
+            panel.compute_rec_pressure()
+            # tpress.append(np.real(panel.p))
+            r_pressures.append(np.real(panel.p))
+            recs.append(panel.recs.tolist()[0])
+        # pressures.append(tpress)
 
     plot_grid(np.array(pressures))
+    filepath = '/Users/time/Documents/UW/04_code/dmg_helmholtz/data/panel_geometry.json'
+    data_to_json(filepath, panel, r_pressures, recs)
