@@ -1,6 +1,12 @@
 import numpy as np 
 import scipy as sp
 from math import sqrt
+from scipy.linalg import solve
+from scipy.linalg import lstsq
+from spatial import make_othro_array
+from spatial import point_array_distance
+from spatial import make_spatial_matix
+from spatial import point_to_points_distance
 
 from plotting import plot_grid
 
@@ -11,346 +17,370 @@ from plotting import plot_grid
 #TODO: make a rhino check of distances and indices
 #TODO: reproduce Bart's experiments, TF???, IL???
 #TODO: check the np.solve. Probably why signs are weird???
+#TODO: Why is qhr so small compared to q0???
 
+class HelmholtzPanel(object):
+    def __init__(self, f, num_hr_x, num_hr_y, dx, dy):
+        # HR dimensions - - - 
+        self.nl = None
+        self.nr = None
+        self.bl = None
+        self.br = None
+        self.sn = None
+        self.sb = None
+        self.bv = None
 
+        # Panel parameters - - - -
+        self.num_hr_x = num_hr_x
+        self.num_hr_y = num_hr_y
+        self.dx = dx
+        self.dy = dy
+        self.num_hr = self.num_hr_x * self.num_hr_y
+        self.D = None
+        self.SN = None
+        self.sD = None
 
+        # scene - - - - 
+        self.src_xyz = None
+        self.q0 = None
+        self.recs = None
 
-def hr_resonant_freq(sn, nl, nr, br, bl):
-    s = np.pi * nr ** 2 # neck cross sectional area
-    lef = nl + (1.7 * nr)  # neck effective length
-    v = bl * np.pi * br ** 2  # cavity volume
-    f = (c / (2 * np.pi)) * np.sqrt( s / (lef * v))
-    return f
+        # acoustic parameters - - - - - - - - - - - - - -
+        self.f       = f             # frequency (Hz)
+        self.c       = 344.3            # speed of sound (m/s)
+        self.rho     = 1.205            # density of air (kg/m3c)
+        self.mu      = 1.88e-5          # dynamic viscosity of air (Ns / m2)
+        self.gamma   = 1.4              # ratio of specific heats (-)
+        self.thcon   = .026             # thermal conductivity (W / mk)
+        self.cp      = 1010.            # heat capacity at constant pressure (J / kgK)
 
-def greens(r, k):
-    """This is a greens function as described in Var der Aa (2010) eqs 2.12 in page 14.
+        self.wlen = self.c / self.f                # wavelength (m)
+        self.afreq = 2. * np.pi * self.f       # angular frequency (rad/s)
+        self.k = (2. * np.pi) / self.wlen     # wavenumber (rad/m)
 
-    Parameters
-    ----------
-    r (float): The distance between source and reciever (m)
-    k (float): Wavenumber ()
+        # - - -
+        self.nr = None
+        self.p = None
 
-    Returns
-    -------
-      (float): The greens function something.
-    """
-    return np.exp(-1j * k * r) / r
+    def compute_hr_distances(self):
 
-def coupling_function(afreq, rho, rmn, s):
-    """ This is the couppling function between two HRs (m and n) at a distance of rmn.
-    Var der Aa (2010) eqs 2.24 in page 18.
+        self.hr_pts = make_othro_array(self.num_hr_x, 
+                                       self.num_hr_y, 
+                                       self.dx, 
+                                       self.dy, 
+                                       sp=[0, 0, 0])
+        self.D = point_array_distance(self.hr_pts)
+    
+    def compute_panel_recs_distances(self):
+        self.rD = point_to_points_distance(self.recs, self.hr_pts)
+        self.src_rec_d = point_to_points_distance(self.src_xyz, self.recs)
 
-    Parameters
-    ----------
-    afreq   (float): Angular frequency = 2 pi f (rad / s)
-    rho     (float): Air density (kg/m3)
-    rms     (float): The distance between the center of tne neck openings for HRs m and n (m)
-    s       (float): The neck opening surface for resonator m (m2)
+    def compute_panel_src_distances(self):
+        self.sD = point_to_points_distance(self.src_xyz, self.hr_pts)
 
-    Returns
-    -------
-    gmn (   float): 
-    """
+    def compute_panel_areas(self):
+        self.sn = np.pi * (self.nr ** 2) # neck opening surface (m2)
+        self.sb = np.pi * (self.br ** 2) # body opening surface (m2)
 
-    gmn = ((1j * afreq * rho) / (2 * np.pi)) * greens(rmn) * s
-    return gmn
+    def hr_resonant_freq(self):
+        lef = self.nl + (1.7 * self.nr)  # neck effective length
+        self.bv = self.bl * np.pi * self.br ** 2  # cavity volume
+        self.resonant_f = (self.c / (2 * np.pi)) * np.sqrt( self.sn / (lef * self.bv))
 
-def hr_impedance(afreq, m, rn, s, sn):
-    """This function computes the mechanical impedance of a Helmholtz
-    resonator. Taken from Var der Aa (2010) eqs 2.10 in page 12.
+    def calculate_mass_corrections(self):
+        """This function computes the neck and mass corrections necesary
+        for the calculation of HR neck resistances and impedances, as
+        described by Var der Aa (2010).
 
-    Parameters
-    ----------
-    afreq   (float): Angular frequency = 2 pi f (rad/s)
-    m       (float): Total mass neck + body (kg/m3)
-    rn      (float): Neck resistance (kg/s)
-    s       (float): Spring stiffness (N/m)
-    sn      (float): Neck opening surface (m2)
+        Parameters
+        ----------
+        sn      (float): Neck opening surface (m2)
+        nr      (float): Neck radius (m)
+        br      (float): Body radius (m)
+        nl      (float): Neck length (m)
+        rho     (float): Air density (kg/m3)
 
-    Returns
-    -------
-    zhr     (float): The mechanical impedance of the HR (Ns/m)
-    """
-    #TODO: compare the results of this function againts something. Cox?
-    zhr = ((1j * afreq * m) + rn - ((1j / afreq) * s)) / sn
-    return zhr
+        Returns
+        -------
+        nl  (float): Corrected neck length (m)
+        mn  (float): neck mass (kg/m3)
+        mb  (float): Corrected body mass (kg/m3)
+        m   (float): Total mass (kg/m3)
+        """
 
-def neck_len_correction(sn, nr, br, nl):
-    """This function applies corrections to the neck length as
-    described by Var der Aa (2010) eqs 2.2 and 2.3 in page 9.
+        self.neck_len_correction()
+        self.mn = self.sn * self.rho * self.nl
+        self.body_mass_correction()
+        self.m = self.mn + self.mb
+        self.vol = (self.sb * self.bl) # (sn * nl) + (sb * bl)     
+        
+    def neck_len_correction(self):
+        """This function applies corrections to the neck length as
+        described by Var der Aa (2010) eqs 2.2 and 2.3 in page 9.
 
-    Parameters
-    ----------
-    sn (float): Neck opening surface (m2)
-    nr (float): Neck radius (m)
-    br (float): Body radius (m)
-    nl (float): Neck length (m)
+        Parameters
+        ----------
+        sn (float): Neck opening surface (m2)
+        nr (float): Neck radius (m)
+        br (float): Body radius (m)
+        nl (float): Neck length (m)
 
-    Returns
-    -------
-    nl (float): Corrected neck length (m)
-    """
-    linner = .48 * np.sqrt(sn) * (1 - 1.25 * (nr / br))
-    louter = (8 / (3 * np.pi)) * nr
-    nl += linner + louter
-    return nl
+        Returns
+        -------
+        nl (float): Corrected neck length (m)
+        """
+        linner = .48 * np.sqrt(self.sn) * (1 - 1.25 * (self.nr / self.br))
+        louter = (8 / (3 * np.pi)) * self.nr
+        self.nl += linner + louter
 
-def body_mass_correction(rho, bl, sb, sn):
-    """This function corrects the body cavity mass as
-    described by Var der Aa (2010) eqs 2.4 in page 9.
+    def body_mass_correction(self):
+        """This function corrects the body cavity mass as
+        described by Var der Aa (2010) eqs 2.4 in page 9.
 
-    Parameters
-    ----------
-    rho     (float): Air density (kg/m3)
-    bl      (float): Body length (m)
-    sb      (float): Body opening surface (m2)
-    sn      (float): Neck opening surface (m2)
+        Parameters
+        ----------
+        rho     (float): Air density (kg/m3)
+        bl      (float): Body length (m)
+        sb      (float): Body opening surface (m2)
+        sn      (float): Neck opening surface (m2)
 
-    Return
-    ------
-    mb      (float): Corrected body mass (kg/m3)
-    """
-    mb = (1 / 3) * ((rho * bl) / sb) * (sn ** 2)
-    return mb
+        Return
+        ------
+        mb      (float): Corrected body mass (kg/m3)
+        """
+        self.mb = (1 / 3) * ((self.rho * self.bl) / self.sb) * (self.sn ** 2)
 
-def spring_stiffness(rho, c, sn, vol):
-    """This function computes the air spring stiffness
-    according to Var der Aa (2010) eqs 2.5 in page 10.
+    def neck_resistance(self):
+        """
+        This function computes the neck resistance in an HR using the forulation
+        presented in Var der Aa (2010) eqs 2.6 and 2.7 in page 10. 
 
-    Parameters
-    ----------
-    rho     (float): Air density (kg/m3)
-    c       (float): Speed of sound (m/s)
-    sn      (float): Neck opening surface (m2)
-    vol     (float): Total resonator volume (m3)
+        Parameters
+        ----------
+        mu      (float): Dynamical viscosity of air (Ns / m2)
+        gamma   (float): Ratio of specific heats (-)
+        thcon    (flat): Thermal conductivity (W / mK)
+        cp      (float): Heat capacity at constant pressure (J / kgK)
+        nl      (float): Neck length (m)
+        nr      (float): Neck radius (m)
+        rho     (float): Air density (kg/m3)
+        afreq   (float): Angular frequency = 2 pi f (rad / s)
 
-    Returns
-    -------
-    s       (float): Air spring stiffness (N/m)
-    """
-    s = (rho * (c ** 2) * (sn ** 2)) / vol
-    return s
+        Returns
+        -------
+        rn      (float): neck resistance (kg/s)
+        """
+        #TODO neck resistance values still differ slightly from Barts chart
+        mueff = self.mu * ((1 + ((self.gamma - 1) * sqrt(self.thcon / (self.mu * self.cp)))) ** 2)
+        nwall = (self.nl / self.nr) * (sqrt(2 * mueff * self.rho * self.afreq) / (np.pi * self.nr ** 2))
+        nends = 2 * (sqrt(2 * self.mu * self.rho * self.afreq) / (np.pi * self.nr ** 2))
+        self.rn = nwall + nends
+                
+    def spring_stiffness(self):
+        """This function computes the air spring stiffness
+        according to Var der Aa (2010) eqs 2.5 in page 10.
 
-def neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq):
-    """
-    This function computes the neck resistance in an HR using the forulation
-    presented in Var der Aa (2010) eqs 2.6 and 2.7 in page 10. 
+        Parameters
+        ----------
+        rho     (float): Air density (kg/m3)
+        c       (float): Speed of sound (m/s)
+        sn      (float): Neck opening surface (m2)
+        vol     (float): Total resonator volume (m3)
 
-    Parameters
-    ----------
-    mu      (float): Dynamical viscosity of air (Ns / m2)
-    gamma   (float): Ratio of specific heats (-)
-    thcon    (flat): Thermal conductivity (W / mK)
-    cp      (float): Heat capacity at constant pressure (J / kgK)
-    nl      (float): Neck length (m)
-    nr      (float): Neck radius (m)
-    rho     (float): Air density (kg/m3)
-    afreq   (float): Angular frequency = 2 pi f (rad / s)
+        Returns
+        -------
+        s       (float): Air spring stiffness (N/m)
+        """
+        self.s = (self.rho * (self.c ** 2) * (self.sn ** 2)) / self.vol
 
-    Returns
-    -------
-    rn      (float): neck resistance (kg/s)
-    """
-    #TODO neck resistance values still differ slightly from Barts chart
-    mueff = mu * ((1 + ((gamma - 1) * sqrt(thcon / (mu * cp)))) ** 2)
-    nwall = (nl / nr) * (sqrt(2 * mueff * rho * afreq) / (np.pi * nr ** 2))
-    nends = 2 * (sqrt(2 * mu * rho * afreq) / (np.pi * nr ** 2))
-    rn = nwall + nends
-    return rn
+    def hr_impedance(self):
+        """This function computes the mechanical impedance of a Helmholtz
+        resonator. Taken from Var der Aa (2010) eqs 2.10 in page 12.
 
-def neck_resistance_paper(nl, nr, mu, rho, afreq):
-    """Probably wont keep this function...
-    """
-    rn = (sqrt(2 * rho * afreq * mu ) / (np.pi * nr ** 2)) * (2 + (nl / nr))  
-    return rn
+        Parameters
+        ----------
+        afreq   (float): Angular frequency = 2 pi f (rad/s)
+        m       (float): Total mass neck + body (kg/m3)
+        rn      (float): Neck resistance (kg/s)
+        s       (float): Spring stiffness (N/m)
+        sn      (float): Neck opening surface (m2)
 
-def calculate_corrections(sn, nr, br, nl, rho):
-    """This function computes the neck and mass corrections necesary
-    for the calculation of HR neck resistances and impedances, as
-    described by Var der Aa (2010).
+        Returns
+        -------
+        zhr     (float): The mechanical impedance of the HR (Ns/m)
+        """
+        #TODO: compare the results of this function againts something. Cox?
+        self.zhr = ((1j * self.afreq * self.m) + self.rn - ((1j / self.afreq) * self.s)) / self.sn
 
-    Parameters
-    ----------
-    sn      (float): Neck opening surface (m2)
-    nr      (float): Neck radius (m)
-    br      (float): Body radius (m)
-    nl      (float): Neck length (m)
-    rho     (float): Air density (kg/m3)
+    def compute_spatial_neck_surface(self):
+        self.SN = make_spatial_matix(self.sn) # not sure this matrix is in the right direction
 
-    Returns
-    -------
-    nl  (float): Corrected neck length (m)
-    mn  (float): neck mass (kg/m3)
-    mb  (float): Corrected body mass (kg/m3)
-    m   (float): Total mass (kg/m3)
-    """
+    def coupling_functions(self):
+        """This function computes the coupling functions as 
+        described in Var der Aa (2010) eqs 2.24 in page 18.
 
-    nl = neck_len_correction(sn, nr, br, nl)
-    mn = sn * rho * nl
-    mb = body_mass_correction(rho, bl, sb, sn)
-    m = mn + mb
-    return nl, mn, mb, m
+        Parameters
+        ----------
+        afreq   (float): Angular frequency = 2 pi f (rad / s)
+        rho     (float): Air density (kg/m3)
+        D       (float): Distance matrix of all resonator centers (m)
+        S       (float): Neck opening surface Matrix (m)
+        k       (float): Wave number ()
 
-def coupling_functions(afreq, rho, D, S, k):
-    """This function computes the coupling functions as 
-    described in Var der Aa (2010) eqs 2.24 in page 18.
+        Returns
+        -------
+        G (float): Coupling functions (?)
+        """
+        self.G = ((1j * self.afreq * self.rho) / ( 2 * np.pi)) * self.greens(self.D, self.k) * self.SN
 
-    Parameters
-    ----------
-    afreq   (float): Angular frequency = 2 pi f (rad / s)
-    rho     (float): Air density (kg/m3)
-    D       (float): Distance matrix of all resonator centers (m)
-    S       (float): Neck opening surface Matrix (m)
-    k       (float): Wave number ()
+    def coupling_pressures(self):
+        """This function computes the coupling pressures of an HR array based
+        on Var der Aa (2010) eqs 2.30 in page 22.
 
-    Returns
-    -------
-    G (float): Coupling functions (?)
-    """
-    G = ((1j * afreq * rho) / ( 2 * np.pi)) * greens(D, k) * S
-    return G
+        Parameters
+        zhr (float): HR mechanical impedance (Ns/m)
+        rho (float): Air desnity (kg/m3)
+        c (float): Speed of sound (m/s)
+        k (float): Wave number (-)
+        nr (float): Neck radius (m)
+        G (float): coupling functions (?)
 
-def coupling_pressures(zhr, rho, c, k, nr, G):
-    """This function computes the coupling pressures of an HR array based
-    on Var der Aa (2010) eqs 2.30 in page 22.
+        Returns
+        G (float): Coupling pressures (?)
+        """
+        diag = self.zhr - np.real(self.rho * self.c * (1 -  np.exp(-1j * self.k * self.nr)))
+        np.fill_diagonal(self.G, diag)
+        
+    def calculate_direct_qs(self):
+        """This function computes the source-to-hr pressure as
+        described in Var der Aa (2010) eqs 2.25 in page 18. 
 
-    Parameters
-    zhr (float): HR mechanical impedance (Ns/m)
-    rho (float): Air desnity (kg/m3)
-    c (float): Speed of sound (m/s)
-    k (float): Wave number (-)
-    nr (float): Neck radius (m)
-    G (float): coupling functions (?)
+        Parameters
+        ----------
+        q0  (float): Initial source stength (pressure) (Pa)
+        sD  (float): Distance from source to HR centers (m)
+        k   (float): wavenumber (-)
 
-    Returns
-    G (float): Coupling pressures (?)
-    """
-    diag = zhr - np.real(rho * c * (1 -  np.exp(-1j * k * nr)))
-    np.fill_diagonal(G, diag)
-    return G
+        Returns
+        -------
+        source-to-hr pressure
+        """
+        self.c_ =  self.q0 * 2 * self.greens(self.sD, self.k).transpose()
 
-def calculate_direct_qs(q0, sD, k):
-    """This function computes the source-to-hr pressure as
-    described in Var der Aa (2010) eqs 2.25 in page 18. 
+    def calculate_velocities(self):
+        self.v_ = solve(self.G, self.c_).flatten()
+        # self.v_ = lstsq(self.G, self.c_)[0].flatten()
 
-    Parameters
-    ----------
-    q0  (float): Initial source stength (pressure) (Pa)
-    sD  (float): Distance from source to HR centers (m)
-    k   (float): wavenumber (-)
+    def calculate_coupled_hr_strenghts(self):
+        """
+        """
+        self.qhr = ((1j * self.rho * self.sn) / 2 * np.pi) * self.v_
+        
+    def calculate_pressure(self):
+        """
+        """
+        p_direct = self.q0 * self.greens(self.src_rec_d, self.k)  # direct component
+        p_hr_panel  = self.qhr * self.greens(self.rD, self.k)  # without direct component
+        # print(np.sum(self.qhr), self.q0)
+        # self.p = np.sum(p_direct) + np.sum(p_hr_panel)
+        self.p = np.sum(p_hr_panel)
+        # self.p = np.sum(p_direct)
 
-    Returns
-    -------
-    source-to-hr pressure
-    """
-    return q0 * 2 * greens(sD, k)
+    def greens(self, r, k):
+        """This is a greens function as described in Var der Aa (2010) eqs 2.12 in page 14.
 
-def calculate_coupled_hr_strenghts(afreq, rho, sn, v_):
-    """
-    """
-    qhr = ((1j * rho * sn) / 2 * np.pi) * v_
-    return qhr
+        Parameters
+        ----------
+        r (float): The distance between source and reciever (m)
+        k (float): Wavenumber ()
 
-def calculate_pressure(q0, src_rec_d, qhr, rD, k):
-    """
-    """
-    # p = q0 * greens(src_rec_d, k) + np.sum(qhr * greens(rD, k))
-    p = np.sum(qhr * greens(rD, k))
-    return p
+        Returns
+        -------
+        (float): The greens function something.
+        """
+        return np.exp(-1j * k * r) / r
 
-def run_hr_pressure():
+    def compute_panel_impedance(self):
+        # start calling functions - - - 
+        self.compute_hr_distances()
+        self.compute_panel_areas()
+        self.hr_resonant_freq()  # optional for the moment 
+        self.calculate_mass_corrections()
+
+        # reistance, stiffness and impedance - - - - - - 
+        self.neck_resistance()  # neck resitance (kg/s)
+        self.spring_stiffness()           # spring stiffness
+        self.hr_impedance()         # hr impedance 
+
+    def compute_panel_coupling(self):
+        self.compute_spatial_neck_surface()
+        self.coupling_functions()
+        self.coupling_pressures()
+
+    def compute_velocities(self):
+        self.compute_panel_src_distances()
+        self.calculate_direct_qs()
+        self.calculate_velocities()
+
+    def compute_rec_pressure(self):
+        self.calculate_coupled_hr_strenghts()
+        self.compute_panel_recs_distances()
+        self.calculate_pressure()
 
 if __name__ == '__main__':
-    from scipy.linalg import solve
 
-    from spatial import make_othro_array
-    from spatial import point_array_distance
-    from spatial import make_spatial_matix
-    from spatial import point_to_points_distance
+    # import cProfile, pstats, io
+    # from pstats import SortKey
+
+    # pr = cProfile.Profile()
+    # pr.enable()
     
+    f = 500.
+    num_hr_x = 50
+    num_hr_y = 50
+    dx = .1
+    dy = .1
+
+    panel = HelmholtzPanel(f, num_hr_x, num_hr_y, dx, dy)
+
+    # scene parameters - - - - - - - - - - - - - - - -
+    panel.src_xyz = np.array([[5, 0, 2]])
+    panel.q0 = .1
+
+    # hr parameters - - - - - - - - - - - - - - - - - 
+    panel.nl = .004 * np.ones(panel.num_hr)       # neck length
+    panel.nr = .002 * np.ones(panel.num_hr)       # neck radius
+    panel.bl = .016 * np.ones(panel.num_hr)       # body length
+    panel.br = .0035 * np.ones(panel.num_hr)      # body radius
+
+    # start calling methods - - - - - - -
+    panel.compute_panel_impedance()
+    panel.compute_panel_coupling()
+    panel.compute_velocities()
+
+    n = 100
+    # k = panel.k
     pressures = []
-    frequencies = []
-    for x in range(100):
-        temp_pressures = []
-        for z in range(1, 100):
-            # scene parameters - - - - - - - - - - - - - - - -
-            src_xyz = np.array([[10,0,2]])
-            q0 = .1
-            recs = np.array([[x*.1, 0, z*.1]])  # this should be only one for now. dont know what happens if more
+    for z in range(n):
+        tpress = []
+        for x in range(n):
+            panel.recs = np.array([[x * .1, 0, .01 + z * .1]])  # this should be only one for now. dont know what happens if more
+            panel.compute_rec_pressure()
+            tpress.append(np.real(panel.p))
+            # d = point_to_points_distance(panel.src_xyz , panel.recs)[0]
+            # # print([x * .1, 0, z * .1])
+            # p = np.exp(-1j * k * d) / d
+            # # print(d, np.real(p))
+            # # tpress.append(d)
+            # tpress.append(np.real(p))
+        pressures.append(tpress)
 
-            # acoustic parameters - - - - - - - - - - - - - -
-            f       = 1000.             # frequency (Hz)
-            c       = 344.3             # speed of sound (m/s)
-            rho     = 1.205             # density of air (kg/m3c)
-            mu      = 1.88e-5           # dynamic viscosity of air (Ns / m2)
-            gamma   = 1.4               # ratio of specific heats (-)
-            thcon   = .026              # thermal conductivity (W / mk)
-            cp      = 1010.              # heat capacity at constant pressure (J / kgK)
 
-            wlen = c / f                # wavelength (m)
-            afreq = 2. * np.pi * f       # angular frequency (rad/s)
-            k = (2. * np.pi) / wlen     # wavenumber (rad/m)
-
-            # hr array parameters - - - - - - - - - - - - - -
-            num_hr_x = 20
-            num_hr_y = 20
-            dx = .1
-            dy = .1
-            num_hr = num_hr_x * num_hr_y
-            points = make_othro_array(num_hr_x, num_hr_y, dx, dy)
-            D = point_array_distance(points)
-
-            # hr parameters - - - - - - - - - - - - - - - - - 
-            nl = .004 * np.ones(num_hr)       # neck length
-            nr = .002 * np.ones(num_hr)       # neck radius
-            bl = .016 * np.ones(num_hr)       # body length
-            br = .0035 * np.ones(num_hr)      # body radius
-
-            sn = np.pi * (nr ** 2) # neck opening surface (m2)
-            sb = np.pi * (br ** 2) # body opening surface (m2)
-
-            hr_rf = hr_resonant_freq(sn, nl, nr, br, bl)
-            # print(hr_rf)
-
-            # masses, volume - - - - - - - - - - - - - - - -
-            nl, mn, mb, m = calculate_corrections(sn, nr, br, nl, rho)
-            vol = (sb * bl)# (sn * nl) + (sb * bl)          # volume (m3) WICH VOLUME SHOULD BE USED????
-
-            # reistance, stiffness and impedance - - - - - - 
-            rn = neck_resistance(mu, gamma, thcon, cp, nl, nr, rho, afreq)  # neck resitance (kg/s)
-            s = spring_stiffness(rho, c, sn, vol)           # spring stiffness
-            zhr = hr_impedance(afreq, m, rn, s, sn)         # hr impedance 
-
-            # coupling pressures - - - - - - - - - - - - - -
-            S = make_spatial_matix(sn)  # not sure this matrix is in the right direction
-            G = coupling_functions(afreq, rho, D, S, k)
-            A = coupling_pressures(zhr, rho, c, k, nr, G)
-
-            # direct to HRs - - - - - - - - - - - - - - - - -
-            sD = point_to_points_distance(src_xyz, points)
-            c_ = calculate_direct_qs(q0, sD, k).transpose()
-
-            # velocities - - - - - - - - - - - - - - - - - - -
-            v_ = solve(A, c_).flatten()
-
-            # coupled pressures, pressures - - - - - - - - - -
-            qhr = calculate_coupled_hr_strenghts(afreq, rho, sn, v_)
-            rD = point_to_points_distance(recs, points)
-            src_rec_d = point_to_points_distance(src_xyz, recs)
-            p = calculate_pressure(q0, src_rec_d, qhr, rD, k)
-            
-            temp_pressures.append(np.real(p))
-            # pressures.append(np.real(p))
-            # frequencies.append(f)
-        pressures.append(temp_pressures)
-    
-    # # plot pressures - - - - - - - - -
-    # import matplotlib.pyplot as plt
-
-    # plt.plot(frequencies, pressures)
-    # plt.xlabel('Frequencies (Hz)')
-    # plt.ylabel('Pressures (Pa)')
-    # plt.show()
+    # pr.disable()
+    # s = io.StringIO()
+    # sortby = SortKey.CUMULATIVE
+    # ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    # ps.print_stats()
+    # print(s.getvalue())
 
     plot_grid(np.array(pressures))
-

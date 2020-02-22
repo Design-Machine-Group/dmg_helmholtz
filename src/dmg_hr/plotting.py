@@ -27,11 +27,11 @@ def plot_grid(values, title=None):
     values (np array): N x N array of values to color 
     """
     levels = MaxNLocator(nbins=15).tick_values(values.min(), values.max())
-    cmap = plt.get_cmap('cividis')
-    norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
+    cmap = plt.get_cmap('seismic')
+    # norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
 
     fig, ax0 = plt.subplots(nrows=1)
-    im = ax0.pcolor(values, cmap=cmap, norm=norm)
+    im = ax0.pcolor(values, cmap=cmap, norm=None)
     fig.colorbar(im, ax=ax0)
     if title:
         ax0.set_title(title)
