@@ -19,6 +19,8 @@ from plotting import plot_grid
 #TODO: reproduce Bart's experiments, TF???, IL???
 #TODO: check the np.solve. Probably why signs are weird???
 #TODO: Why is qhr so small compared to q0???
+#TODO: Are the distances correct??? Check with Rhino
+#TODO: Try non uniform HR geometries
 
 class HelmholtzPanel(object):
     def __init__(self, f, num_hr_x, num_hr_y, dx, dy):
@@ -78,6 +80,11 @@ class HelmholtzPanel(object):
 
     def compute_panel_src_distances(self):
         self.sD = point_to_points_distance(self.src_xyz, self.hr_pts)
+
+    def compute_si_rec_distance(self):
+        s = self.src_xyz.tolist()[0]
+        self.source_image = np.array([[s[0], s[1], -s[2]]])
+        self.si_D = point_to_points_distance(self.source_image, self.recs)
 
     def compute_panel_areas(self):
         self.sn = np.pi * (self.nr ** 2) # neck opening surface (m2)
@@ -282,12 +289,12 @@ class HelmholtzPanel(object):
         """
         p_direct = self.q0 * self.greens(self.src_rec_d, self.k)  # direct component
         p_hr_panel  = self.qhr * self.greens(self.rD, self.k)  # without direct component
-        # print(np.sum(self.qhr), self.q0)
-        # self.p = np.sum(p_direct) + np.sum(p_hr_panel)
-        self.p = np.sum(p_hr_panel)
-        # self.p = np.sum(p_direct)
-        # self.p = (np.sum(p_direct) + np.sum(p_hr_panel)) - np.sum(p_direct)
-
+        p_si = self.q0 * self.greens(self.si_D, self.k) * .8  # source image contribution, hard coded coeff. 
+        self.p = np.sum(p_direct) + np.sum(p_hr_panel) + np.sum(p_si)  # all
+        # self.p = np.sum(p_hr_panel)  # panel only
+        # self.p = np.sum(p_direct)  # direct only
+        # self.p = np.sum(p_si)  # source image only
+        
     def greens(self, r, k):
         """This is a greens function as described in Var der Aa (2010) eqs 2.12 in page 14.
 
@@ -327,6 +334,7 @@ class HelmholtzPanel(object):
     def compute_rec_pressure(self):
         self.calculate_coupled_hr_strenghts()
         self.compute_panel_recs_distances()
+        self.compute_si_rec_distance()
         self.calculate_pressure()
 
 
@@ -348,40 +356,55 @@ def data_to_json(filepath, panel, pressures, recs):
 
 if __name__ == '__main__':
     
-    f = 500.
-    num_hr_x = 10
-    num_hr_y = 10
+    f = 1032.
+    num_hr_x = 2
+    num_hr_y = 2
     dx = .1
     dy = .1
 
     panel = HelmholtzPanel(f, num_hr_x, num_hr_y, dx, dy)
 
-    # scene parameters - - - - - - - - - - - - - - - -
-    panel.src_xyz = np.array([[.5, .51, 2.2]])
+    # scene parameters - - - - - - - - - - - - - - - - -
+    panel.src_xyz = np.array([[-2.5, .55, 2]])
     panel.q0 = .1
 
-    # hr parameters - - - - - - - - - - - - - - - - - 
-    panel.nl = .04 * np.ones(panel.num_hr)       # neck length
-    panel.nr = .02 * np.ones(panel.num_hr)       # neck radius
-    panel.bl = .16 * np.ones(panel.num_hr)       # body length
+    # hr parameters - - - - - - - - - - - - - - - - - -
+    panel.nl = .02 * np.ones(panel.num_hr)       # neck length
+    panel.nr = .01 * np.ones(panel.num_hr)       # neck radius
+    panel.bl = .06 * np.ones(panel.num_hr)       # body length
     panel.br = .035 * np.ones(panel.num_hr)      # body radius
 
-    # start calling methods - - - - - - -
+    # panel.nr[25] = .05
+    # panel.nl[25] = .01
+    # panel.br[25] = .1
+    # panel.bl[25] = .1
+
+    # panel.nr[55] = .05
+    # panel.nl[55] = .01
+    # panel.br[55] = .1
+    # panel.bl[55] = .1
+
+    ## HR resonant frequencies - - - - - - - - - - - - -
+    # panel.compute_panel_areas()
+    # panel.hr_resonant_freq()
+    # print(panel.resonant_f)
+
+    ## start calling methods - - - - - - - - - - - - - - -
     panel.compute_panel_impedance()
     panel.compute_panel_coupling()
     panel.compute_velocities()
 
-    n = 100
+    n = 2
     # k = panel.k
     pressures = []
     r_pressures = []
     recs = []
-    delta  = .01
+    delta  = 1.01
 
     for z in range(n):
         tpress = []
         for x in range(n):
-            panel.recs = np.array([[.5, x * delta, .01 + z * delta]])
+            panel.recs = np.array([[.5, x * delta, .03 + z * delta]])
             panel.compute_rec_pressure()
             tpress.append(np.real(panel.p))
             r_pressures.append(np.real(panel.p))
@@ -391,13 +414,16 @@ if __name__ == '__main__':
     for z in range(n):
         # tpress = []
         for x in range(n):
-            panel.recs = np.array([[x * delta, .5, .01 + z * delta]])  
+            panel.recs = np.array([[x * delta, .5, .03 + z * delta]])  
+            # panel.recs = np.array([[.7, x * delta, .03 + z * delta]])
             panel.compute_rec_pressure()
             # tpress.append(np.real(panel.p))
             r_pressures.append(np.real(panel.p))
             recs.append(panel.recs.tolist()[0])
-        # pressures.append(tpress)
+    #     # pressures.append(tpress)
 
-    plot_grid(np.array(pressures))
+    minmax = 4e-2
+    plot_grid(np.array(pressures), vmin=None, vmax=None)
+    # plot_grid(np.array(pressures), vmin=-minmax, vmax=minmax)
     filepath = '/Users/time/Documents/UW/04_code/dmg_helmholtz/data/panel_geometry.json'
     data_to_json(filepath, panel, r_pressures, recs)
